@@ -29,6 +29,7 @@ func TestPurge(t *testing.T) {
 	fileToRemove := path.Join(testRepo, "toremove")
 	fileToStay := path.Join(testRepo, "tostay")
 	fileToBePurgedLater := path.Join(testRepo, "tobepurgedlater")
+	fileWithZeroAccessTime := path.Join(testRepo, "zeroaccesstime")
 	fileOutsideRepo := path.Join(testPacolocoDir, "outsiderepo")
 
 	thresholdTime := time.Now().Add(time.Duration(-purgeFilesAfter) * time.Second)
@@ -52,13 +53,19 @@ func TestPurge(t *testing.T) {
 	require.NoError(t, err)
 	os.Chtimes(fileToBePurgedLater, thresholdTime.Add(time.Hour), thresholdTime.Add(-time.Hour))
 
+	os.Create(fileWithZeroAccessTime)
+	pkgFileContent = "leave me too"
+	require.NoError(t, os.WriteFile(fileWithZeroAccessTime, []byte(pkgFileContent), os.ModePerm))
+	infoZeroAccessTime, err := os.Stat(fileWithZeroAccessTime)
+	os.Chtimes(fileWithZeroAccessTime, time.Unix(0, 0).UTC(), thresholdTime.Add(-time.Hour))
+
 	os.Create(fileOutsideRepo)
 	pkgFileContent = "don't touch me"
 	require.NoError(t, os.WriteFile(fileOutsideRepo, []byte(pkgFileContent), os.ModePerm))
 	os.Chtimes(fileOutsideRepo, thresholdTime.Add(-time.Hour), thresholdTime.Add(-time.Hour))
 
-	expectedPackageNum := float64(2)
-	expectedSize := float64(infoToStay.Size() + infoToBePurgedLater.Size())
+	expectedPackageNum := float64(3)
+	expectedSize := float64(infoToStay.Size() + infoToBePurgedLater.Size() + infoZeroAccessTime.Size())
 
 	purgeStaleFiles(testPacolocoDir, purgeFilesAfter, "purgerepo")
 
@@ -68,6 +75,8 @@ func TestPurge(t *testing.T) {
 	_, err = os.Stat(fileToStay)
 	require.NoError(t, err)
 	_, err = os.Stat(fileToBePurgedLater)
+	require.NoError(t, err)
+	_, err = os.Stat(fileWithZeroAccessTime)
 	require.NoError(t, err)
 	// files outside of the pkgs cache should not be touched
 	_, err = os.Stat(fileOutsideRepo)
